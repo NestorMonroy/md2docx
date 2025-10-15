@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# bin/md2docx
+# CLI for Markdown to DOCX conversion (template optional)
+
+set -euo pipefail
+
+# =============================================================================
+# INITIALIZATION
+# =============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# =============================================================================
+# LOAD ENVIRONMENT
+# =============================================================================
+
+load_environment() {
+    if [[ -f "$PROJECT_ROOT/infrastructure/utils/core.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/infrastructure/utils/core.sh"
+
+        if ! load_project_environment; then
+            echo "ERROR: Failed to load project environment" >&2
+            return 1
+        fi
+    else
+        echo "CRITICAL: Core system not found at: $PROJECT_ROOT/infrastructure/utils/core.sh" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# USAGE FUNCTION
+# =============================================================================
+
+show_usage() {
+    cat << EOF
+Usage: md2docx [INPUT_MD] [OUTPUT_DOCX]
+
+Convert Markdown files to DOCX format.
+Template is OPTIONAL - works with or without it.
+
+Arguments:
+  INPUT_MD      Path to input Markdown file (default: $DOCX_INPUT_MD)
+  OUTPUT_DOCX   Path to output DOCX file (default: $DOCX_OUTPUT_DOCX)
+
+Environment Variables:
+  DOCX_INPUT_MD       Default input file
+  DOCX_OUTPUT_DOCX    Default output file
+  DOCX_TPL            Template DOCX file (optional)
+  DOCX_STYLE_YML      Style configuration file
+  DOCX_PYTHON         Python interpreter to use
+
+Examples:
+  md2docx
+    Convert default input to default output
+
+  md2docx docs/my_document.md builds/my_document.docx
+    Convert specific files
+
+  md2docx docs/report.md
+    Convert to default output location with custom input
+
+Configuration:
+  Template:     ${DOCX_TPL:-"(optional - none configured)"}
+  Style config: $DOCX_STYLE_YML
+  Python:       $DOCX_PYTHON
+
+Note:
+  If no template is configured, a blank document with default
+  Word styles will be used. You can still get good results!
+
+EOF
+}
+
+# =============================================================================
+# LOAD ENVIRONMENT
+# =============================================================================
+
+if ! load_environment; then
+    echo "CRITICAL: Environment loading failed" >&2
+    exit 1
+fi
+
+# =============================================================================
+# PARSE ARGUMENTS
+# =============================================================================
+
+INPUT_FILE="${1:-${DOCX_INPUT_MD}}"
+OUTPUT_FILE="${2:-${DOCX_OUTPUT_DOCX}}"
+
+# Handle help flag
+if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+    show_usage
+    exit 0
+fi
+
+# =============================================================================
+# VALIDATE PREREQUISITES
+# =============================================================================
+
+validate_prerequisites() {
+    log_debug "Validating prerequisites"
+
+    local errors=0
+
+    # Check Python virtualenv
+    if [[ ! -d "$DOCX_VENV" ]]; then
+        log_error "Python virtualenv not found: $DOCX_VENV"
+        log_error "Run: sudo bash scripts/installation/install-docx-stack.sh"
+        ((errors++))
+    fi
+
+    # Check Python interpreter
+    if [[ ! -f "$DOCX_PYTHON" ]]; then
+        log_error "Python interpreter not found: $DOCX_PYTHON"
+        log_error "Run: sudo bash scripts/installation/install-docx-stack.sh"
+        ((errors++))
+    fi
+
+    # Check main script
+    if [[ ! -f "$DOCX_MAIN_SCRIPT" ]]; then
+        log_error "Main script not found: $DOCX_MAIN_SCRIPT"
+        log_error "Deploy Python scripts to: $DOCX_SCRIPTS_DIR"
+        ((errors++))
+    fi
+
+    # Template is now OPTIONAL - just warn if missing
+    if [[ ! -f "$DOCX_TPL" ]]; then
+        log_warning "Template not found: $DOCX_TPL"
+        log_info "Using blank document with default Word styles"
+        log_info "For professional output, create template at: $DOCX_TPL"
+    fi
+
+    # Check style config
+    if [[ ! -f "$DOCX_STYLE_YML" ]]; then
+        log_error "Style configuration not found: $DOCX_STYLE_YML"
+        log_error "Run: sudo bash scripts/setup/configure-docx-pipeline.sh"
+        ((errors++))
+    fi
+
+    # Check input file
+    if [[ ! -f "$INPUT_FILE" ]]; then
+        log_error "Input file not found: $INPUT_FILE"
+        ((errors++))
+    fi
+
+    # Check input file is readable
+    if [[ -f "$INPUT_FILE" ]] && [[ ! -r "$INPUT_FILE" ]]; then
+        log_error "Input file not readable: $INPUT_FILE"
+        ((errors++))
+    fi
+
+    if [[ $errors -gt 0 ]]; then
+        log_error "Prerequisites validation failed with $errors error(s)"
+        return 1
+    fi
+
+    log_debug "Prerequisites validated successfully"
+    return 0
+}
+
+# =============================================================================
+# VALIDATE OUTPUT DIRECTORY
+# =============================================================================
+
+validate_output_directory() {
+    local output_dir
+    output_dir="$(dirname "$OUTPUT_FILE")"
+
+    if [[ ! -d "$output_dir" ]]; then
+        log_info "Creating output directory: $output_dir"
+        if ! mkdir -p "$output_dir" 2>/dev/null; then
+            log_error "Failed to create output directory: $output_dir"
+            return 1
+        fi
+    fi
+
+    if [[ ! -w "$output_dir" ]]; then
+        log_error "Output directory not writable: $output_dir"
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# CONVERT FUNCTION
+# =============================================================================
+
+convert_md_to_docx() {
+    log_info "Converting Markdown to DOCX"
+    log_info "  Input:  $INPUT_FILE"
+    log_info "  Output: $OUTPUT_FILE"
+
+    # Show template status
+    if [[ -f "$DOCX_TPL" ]]; then
+        log_info "  Template: $DOCX_TPL"
+    else
+        log_info "  Template: None (using blank document)"
+    fi
+
+    # Get input file size
+    local input_size
+    input_size=$(stat -c%s "$INPUT_FILE" 2>/dev/null || echo "0")
+    log_debug "Input file size: $((input_size / 1024)) KB"
+
+    # Prepare Python command
+    local python_cmd=(
+        "$DOCX_PYTHON"
+        "$DOCX_MAIN_SCRIPT"
+        --input "$INPUT_FILE"
+        --output "$OUTPUT_FILE"
+        --style "$DOCX_STYLE_YML"
+    )
+
+    # Add template only if it exists
+    if [[ -f "$DOCX_TPL" ]]; then
+        python_cmd+=(--template "$DOCX_TPL")
+    fi
+
+    log_debug "Executing: ${python_cmd[*]}"
+
+    # Execute conversion
+    local start_time
+    start_time=$(date +%s)
+
+    local output
+    output=$("${python_cmd[@]}" 2>&1)
+    local exit_code=$?
+
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Conversion failed (exit code: $exit_code)"
+        log_error "Python output:"
+        echo "$output" >&2
+        return 1
+    fi
+
+    # Show Python output if verbose
+    if [[ -n "$output" ]]; then
+        log_debug "Python output:"
+        echo "$output" | while read -r line; do
+            log_debug "  $line"
+        done
+    fi
+
+    log_info "Conversion completed in ${duration}s"
+
+    return 0
+}
+
+# =============================================================================
+# VERIFY OUTPUT
+# =============================================================================
+
+verify_output() {
+    log_info "Verifying output file"
+
+    if [[ ! -f "$OUTPUT_FILE" ]]; then
+        log_error "Output file not created: $OUTPUT_FILE"
+        return 1
+    fi
+
+    local output_size
+    output_size=$(stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "0")
+
+    if [[ $output_size -lt 1000 ]]; then
+        log_error "Output file too small: $output_size bytes"
+        log_error "Conversion may have failed"
+        return 1
+    fi
+
+    # Check if it's a valid DOCX (ZIP) file
+    local file_type
+    file_type=$(file -b --mime-type "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+
+    if [[ "$file_type" != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ]] && \
+       [[ "$file_type" != "application/zip" ]]; then
+        log_warning "Output may not be a valid DOCX file"
+        log_warning "File type: $file_type"
+    fi
+
+    log_success "Output file verified"
+    log_info "  Location: $OUTPUT_FILE"
+    log_info "  Size: $((output_size / 1024)) KB"
+
+    return 0
+}
+
+# =============================================================================
+# MAIN FUNCTION
+# =============================================================================
+
+main() {
+    log_header "Markdown to DOCX Conversion"
+
+    if ! validate_prerequisites; then
+        log_error "Prerequisites check failed"
+        log_info "Run: md2docx --help"
+        return 1
+    fi
+
+    if ! validate_output_directory; then
+        log_error "Output directory validation failed"
+        return 1
+    fi
+
+    if ! convert_md_to_docx; then
+        log_error "Conversion failed"
+        return 1
+    fi
+
+    if ! verify_output; then
+        log_error "Output verification failed"
+        return 1
+    fi
+
+    log_success "Conversion completed successfully"
+    log_info "DOCX file ready: $OUTPUT_FILE"
+
+    # Reminder about template if not using one
+    if [[ ! -f "$DOCX_TPL" ]]; then
+        log_info ""
+        log_info "TIP: For professional output with corporate styles,"
+        log_info "     create a template at: $DOCX_TPL"
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# EXECUTION
+# =============================================================================
+
+main "$@"
+exit $?

@@ -1,0 +1,79 @@
+# ==============================================================================
+# .gitattributes - Git Line Ending Configuration
+# ==============================================================================
+# Purpose: Ensure consistent line endings across Windows, Mac, and Linux
+# ==============================================================================
+
+# Default behavior: normalize line endings on commit, convert to LF on checkout
+* text=auto eol=lf
+
+# Shell scripts must always use LF (Unix line endings)
+*.sh text eol=lf
+
+# Configuration files must use LF
+*.conf text eol=lf
+
+# Markdown files use LF
+*.md text eol=lf
+
+# Python files use LF
+*.py text eol=lf
+
+# YAML files use LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# JSON files use LF
+*.json text eol=lf
+
+# Vagrantfile and Ruby files use LF
+Vagrantfile text eol=lf
+*.rb text eol=lf
+
+# Makefile must use LF (tabs are significant)
+Makefile text eol=lf
+*.mk text eol=lf
+
+# Text files use LF
+*.txt text eol=lf
+
+# Documentation files use LF
+LICENSE text eol=lf
+README text eol=lf
+CHANGELOG text eol=lf
+CONTRIBUTING text eol=lf
+
+# Windows-specific files keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files (don't normalize)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.flv binary
+*.fla binary
+*.swf binary
+*.gz binary
+*.zip binary
+*.7z binary
+*.ttf binary
+*.eot binary
+*.woff binary
+*.woff2 binary
+*.jar binary
+
+# Archives
+*.gz binary
+*.tar binary
+*.zip binary
+
+# ==============================================================================
+# END OF .gitattributes
+# ==============================================================================

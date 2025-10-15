@@ -1,0 +1,146 @@
+**/db.sqlite3
+**/__pycache__
+**/.DS_Store
+**/*.tgz
+**/*.tar
+**/*-tar.gz
+**/.vagrant
+**/*.log
+**/*.pyc
+**/*.class
+**/*.jar
+**/coffeeshop/target
+**/csthirdparty/target
+**/static/admin
+**/static/flags
+**/static/rest_framework
+**/static/django_extensions
+**/*.crt
+**/*.csr
+**/*.key
+**/*.pub
+**/*.ipynb
+
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+*.log
+# Backup files
+*.bak
+*.backup
+*.orig
+*.tmp
+/backups/
+
+# Reglas para archivos de backup específicos
+*backup-copy-log-*.txt
+*backup-*log-*.txt
+*.backup-*
+*.pre-fix-*
+
+# Vagrant
+.vagrant/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Generated outputs (do not commit)
+dashboard/output/diagrams/*.png
+dashboard/output/reports/*.html
+
+# Keep directory structure
+!dashboard/output/diagrams/.gitkeep
+!dashboard/output/reports/.gitkeep
+
+# Installation state (user-specific)
+.installation-state/
+
+# Temporary files
+temp/
+tmp/
+.cache/
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+callcenter-dashboard/output/*.log
+
+# IDE and editors
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Test files
+test_*.png
+test_*.html
+# Generated threat model outputs
+dashboard/output/
+*.png
+*.html
+
+dashboard/models/
+

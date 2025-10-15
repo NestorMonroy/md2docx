@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# bin/generate
+# Main orchestrator for document generation
+
+set -euo pipefail
+
+# =============================================================================
+# INITIALIZATION
+# =============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# =============================================================================
+# LOAD ENVIRONMENT
+# =============================================================================
+
+load_environment() {
+    if [[ -f "$PROJECT_ROOT/infrastructure/utils/core.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/infrastructure/utils/core.sh"
+
+        if ! load_project_environment; then
+            echo "ERROR: Failed to load project environment" >&2
+            return 1
+        fi
+    else
+        echo "CRITICAL: Core system not found" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# USAGE
+# =============================================================================
+
+show_usage() {
+    cat << EOF
+Usage: generate TARGET [INPUT] [OUTPUT]
+
+Generate documents in various formats from source files.
+
+Targets:
+  docx          Generate DOCX from Markdown
+  pdf           Generate PDF from source (future)
+  html          Generate HTML from source (future)
+  diagram       Generate diagrams (future)
+
+DOCX Target:
+  generate docx [INPUT.md] [OUTPUT.docx]
+
+  Arguments:
+    INPUT.md      Path to input Markdown file
+                  Default: $DOCX_INPUT_MD
+    OUTPUT.docx   Path to output DOCX file
+                  Default: $DOCX_OUTPUT_DOCX
+
+Examples:
+  generate docx
+    Generate DOCX using default paths
+
+  generate docx docs/report.md
+    Generate from specific input to default output
+
+  generate docx docs/report.md builds/report_v2.docx
+    Generate from specific input to specific output
+
+Environment:
+  DOCX_INPUT_MD       Default input Markdown file
+  DOCX_OUTPUT_DOCX    Default output DOCX file
+  DOCX_TPL            DOCX template file
+  DOCX_STYLE_YML      Style configuration file
+
+EOF
+}
+
+# =============================================================================
+# LOAD ENVIRONMENT
+# =============================================================================
+
+if ! load_environment; then
+    echo "CRITICAL: Environment loading failed" >&2
+    exit 1
+fi
+
+# =============================================================================
+# PARSE ARGUMENTS
+# =============================================================================
+
+TARGET="${1:-}"
+
+if [[ -z "$TARGET" ]]; then
+    show_usage
+    exit 1
+fi
+
+if [[ "$TARGET" == "-h" ]] || [[ "$TARGET" == "--help" ]]; then
+    show_usage
+    exit 0
+fi
+
+# =============================================================================
+# TARGET: DOCX
+# =============================================================================
+
+generate_docx() {
+    local input="${1:-${DOCX_INPUT_MD}}"
+    local output="${2:-${DOCX_OUTPUT_DOCX}}"
+
+    log_header "Generate DOCX"
+
+    log_info "Target: DOCX"
+    log_info "Input:  $input"
+    log_info "Output: $output"
+
+    # Validate input exists
+    if [[ ! -f "$input" ]]; then
+        log_error "Input file not found: $input"
+        return 1
+    fi
+
+    # Check if md2docx is available
+    if ! command -v md2docx >/dev/null 2>&1; then
+        if [[ ! -x "$PROJECT_ROOT/bin/md2docx" ]]; then
+            log_error "md2docx command not found"
+            log_error "Run: sudo bash scripts/setup/deploy-docx-cli.sh"
+            return 1
+        fi
+        MD2DOCX_CMD="$PROJECT_ROOT/bin/md2docx"
+    else
+        MD2DOCX_CMD="md2docx"
+    fi
+
+    # Execute conversion
+    log_info "Converting..."
+
+    if "$MD2DOCX_CMD" "$input" "$output"; then
+        log_success "DOCX generated successfully"
+        log_info "Output: $output"
+
+        # Show file size
+        local file_size
+        file_size=$(stat -c%s "$output" 2>/dev/null || echo "0")
+        log_info "Size: $((file_size / 1024)) KB"
+
+        return 0
+    else
+        log_error "DOCX generation failed"
+        return 1
+    fi
+}
+
+# =============================================================================
+# TARGET: PDF (PLACEHOLDER)
+# =============================================================================
+
+generate_pdf() {
+    log_error "PDF generation not yet implemented"
+    log_info "Target will be available in future version"
+    return 1
+}
+
+# =============================================================================
+# TARGET: HTML (PLACEHOLDER)
+# =============================================================================
+
+generate_html() {
+    log_error "HTML generation not yet implemented"
+    log_info "Target will be available in future version"
+    return 1
+}
+
+# =============================================================================
+# TARGET: DIAGRAM (PLACEHOLDER)
+# =============================================================================
+
+generate_diagram() {
+    log_error "Diagram generation not yet implemented"
+    log_info "Target will be available in future version"
+    return 1
+}
+
+# =============================================================================
+# MAIN DISPATCHER
+# =============================================================================
+
+main() {
+    local target="$1"
+    shift
+
+    case "$target" in
+        docx)
+            generate_docx "$@"
+            ;;
+        pdf)
+            generate_pdf "$@"
+            ;;
+        html)
+            generate_html "$@"
+            ;;
+        diagram)
+            generate_diagram "$@"
+            ;;
+        *)
+            log_error "Unknown target: $target"
+            log_info "Run: generate --help"
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# EXECUTION
+# =============================================================================
+
+main "$TARGET" "$@"
+exit $?
