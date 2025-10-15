@@ -43,7 +43,7 @@ export APP_CACHE_DIR="${APP_BASE_DIR}/cache"
 export DOCX_SRC_DIR="${PROJECT_ROOT}/docs"
 export DOCX_IMG_DIR="${DOCX_SRC_DIR}/images"
 export DOCX_BUILD_DIR="${PROJECT_ROOT}/builds"
-export DOCX_SCRIPTS_DIR="${PROJECT_ROOT}/scripts/mdx"
+export DOCX_SCRIPTS_DIR="${PROJECT_ROOT}/mdx"
 
 # =============================================================================
 # DOCX CONFIGURATION FILES
@@ -62,6 +62,8 @@ export DOCX_OUTPUT_DOCX="${DOCX_BUILD_DIR}/salida_final.docx"
 # =============================================================================
 # PYTHON VIRTUALENV
 # =============================================================================
+# NOTE: Virtualenv must be outside /vagrant/ to avoid symlink issues
+#       VirtualBox shared folders don't support symlinks required by Python venv
 
 export DOCX_VENV="/home/vagrant/.venv-docx"
 export DOCX_PYTHON="${DOCX_VENV}/bin/python"
