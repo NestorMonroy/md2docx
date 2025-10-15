@@ -43,24 +43,6 @@ validate_prerequisites() {
     fi
 
     log_debug "Prerequisites validation started"
-
-    local missing=()
-
-    if ! command -v python3 >/dev/null 2>&1; then
-        missing+=("python3")
-    fi
-
-    if ! command -v pip3 >/dev/null 2>&1; then
-        missing+=("python3-pip")
-    fi
-
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        log_error "Missing required packages: ${missing[*]}"
-        log_error "Run: sudo apt-get install -y ${missing[*]}"
-        return 1
-    fi
-
-    log_debug "Prerequisites validated"
     return 0
 }
 
@@ -161,12 +143,7 @@ install_system_dependencies() {
 
     log_step "$step" "$total" "Installing system dependencies"
 
-    log_info "Updating package lists..."
-    if ! apt-get update -y 2>&1 | tee -a "$LOG_FILE" | grep -v "^Get:" | grep -v "^Hit:" | grep -v "^Reading" >/dev/null; then
-        log_error "Failed to update package lists"
-        return 1
-    fi
-
+    # Check if packages are already installed
     local packages=(
         "python3"
         "python3-venv"
@@ -175,31 +152,110 @@ install_system_dependencies() {
         "build-essential"
     )
 
+    local missing_packages=()
+    for pkg in "${packages[@]}"; do
+        if ! dpkg -l | grep -q "^ii  $pkg "; then
+            missing_packages+=("$pkg")
+        fi
+    done
+
+    # Check if command-line tools are available
+    local missing_commands=()
+    for cmd in python3 pip3; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_commands+=("$cmd")
+        fi
+    done
+
+    # If everything is already installed, skip
+    if [[ ${#missing_packages[@]} -eq 0 ]] && [[ ${#missing_commands[@]} -eq 0 ]]; then
+        log_success "System dependencies already installed (idempotent)"
+        local py_version
+        py_version=$(python3 --version 2>&1)
+        log_info "  $py_version"
+        return 0
+    fi
+
+    # Need to install packages
+    log_info "Missing packages detected: ${missing_packages[*]:-none}"
+    log_info "Missing commands detected: ${missing_commands[*]:-none}"
+
+    # Update package lists with retry logic
+    log_info "Updating package lists..."
+    local max_retries=3
+    local retry_count=0
+    local update_success=false
+
+    while [[ $retry_count -lt $max_retries ]]; do
+        log_debug "Update attempt $((retry_count + 1))/$max_retries"
+
+        if apt-get update -y 2>&1 | tee /tmp/apt-update.log; then
+            update_success=true
+            log_debug "Package lists updated successfully"
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [[ $retry_count -lt $max_retries ]]; then
+                log_warning "Update failed, retrying in 5 seconds..."
+                sleep 5
+            fi
+        fi
+    done
+
+    if [[ "$update_success" != "true" ]]; then
+        log_error "Failed to update package lists after $max_retries attempts"
+        log_error "Last error output:"
+        tail -20 /tmp/apt-update.log >&2
+
+        # Check for specific common issues
+        if grep -q "Could not resolve" /tmp/apt-update.log; then
+            log_error "DNS resolution issue detected. Check network connectivity."
+        fi
+
+        if grep -q "Could not get lock" /tmp/apt-update.log; then
+            log_error "APT lock file issue. Another package manager may be running."
+            log_info "ACCION REQUERIDA: Try the following commands:"
+            log_info "  sudo rm /var/lib/apt/lists/lock"
+            log_info "  sudo rm /var/cache/apt/archives/lock"
+            log_info "  sudo dpkg --configure -a"
+        fi
+
+        return 1
+    fi
+
+    # Install packages
     log_info "Installing packages: ${packages[*]}"
 
-    local install_output
-    install_output=$(apt-get install -y "${packages[@]}" 2>&1)
-    local exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
+    if ! apt-get install -y "${packages[@]}" 2>&1 | tee /tmp/apt-install.log; then
         log_error "Failed to install system dependencies"
-        echo "$install_output" | tail -20 >&2
+        log_error "Installation output:"
+        tail -30 /tmp/apt-install.log >&2
         return 1
     fi
 
     # Verify installation
-    for pkg in python3 python3-venv pip3; do
-        if ! command -v "$pkg" >/dev/null 2>&1; then
-            log_error "Package not found after installation: $pkg"
-            return 1
+    local verification_failed=false
+    for cmd in python3 pip3; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            log_error "Command not found after installation: $cmd"
+            verification_failed=true
         fi
     done
+
+    if [[ "$verification_failed" == "true" ]]; then
+        log_error "Post-installation verification failed"
+        return 1
+    fi
 
     log_success "System dependencies installed"
 
     local py_version
     py_version=$(python3 --version 2>&1)
     log_info "  $py_version"
+
+    local pip_version
+    pip_version=$(pip3 --version 2>&1)
+    log_info "  $pip_version"
 
     return 0
 }
@@ -218,9 +274,15 @@ create_virtualenv() {
         log_info "Virtualenv already exists: $DOCX_VENV"
 
         # Verify it's functional
-        if [[ -f "$DOCX_PYTHON" ]]; then
-            log_info "Virtualenv appears functional, skipping creation"
-            return 0
+        if [[ -f "$DOCX_PYTHON" ]] && [[ -f "$DOCX_PIP" ]]; then
+            # Test if it actually works
+            if "$DOCX_PYTHON" --version >/dev/null 2>&1; then
+                log_success "Virtualenv already functional (idempotent)"
+                return 0
+            else
+                log_warning "Virtualenv exists but is broken, recreating..."
+                rm -rf "$DOCX_VENV"
+            fi
         else
             log_warning "Virtualenv exists but appears broken, recreating..."
             rm -rf "$DOCX_VENV"
@@ -240,30 +302,34 @@ create_virtualenv() {
 
     log_info "Creating virtualenv at: $DOCX_VENV"
 
-    local venv_output
-    venv_output=$(python3 -m venv "$DOCX_VENV" 2>&1)
-    local exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
+    if ! python3 -m venv "$DOCX_VENV" 2>&1 | tee /tmp/venv-creation.log; then
         log_error "Failed to create virtualenv"
-        echo "$venv_output" >&2
+        log_error "Creation output:"
+        cat /tmp/venv-creation.log >&2
         return 1
     fi
 
     # Verify creation
     if [[ ! -f "$DOCX_PYTHON" ]]; then
-        log_error "Python executable not found after venv creation"
+        log_error "Python executable not found after venv creation: $DOCX_PYTHON"
         return 1
     fi
 
     if [[ ! -f "$DOCX_PIP" ]]; then
-        log_error "Pip executable not found after venv creation"
+        log_error "Pip executable not found after venv creation: $DOCX_PIP"
+        return 1
+    fi
+
+    # Test executables
+    if ! "$DOCX_PYTHON" --version >/dev/null 2>&1; then
+        log_error "Python executable is not functional"
         return 1
     fi
 
     log_success "Virtualenv created"
     log_info "  Location: $DOCX_VENV"
     log_info "  Python: $DOCX_PYTHON"
+    log_info "  Pip: $DOCX_PIP"
 
     return 0
 }
@@ -278,24 +344,26 @@ upgrade_pip() {
 
     log_step "$step" "$total" "Upgrading pip"
 
+    # Check current pip version
+    local current_pip_version
+    current_pip_version=$("$DOCX_PIP" --version 2>&1 | awk '{print $2}' || echo "unknown")
+
+    log_info "Current pip version: $current_pip_version"
     log_info "Upgrading pip to latest version..."
 
-    local pip_output
-    pip_output=$("$DOCX_PIP" install --upgrade pip 2>&1)
-    local exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
+    if ! "$DOCX_PIP" install --upgrade pip 2>&1 | tee /tmp/pip-upgrade.log; then
         log_error "Failed to upgrade pip"
-        echo "$pip_output" | tail -20 >&2
+        log_error "Upgrade output:"
+        tail -20 /tmp/pip-upgrade.log >&2
         return 1
     fi
 
-    # Get pip version
-    local pip_version
-    pip_version=$("$DOCX_PIP" --version 2>&1 || echo "unknown")
+    # Get new pip version
+    local new_pip_version
+    new_pip_version=$("$DOCX_PIP" --version 2>&1 || echo "unknown")
 
     log_success "Pip upgraded"
-    log_info "  $pip_version"
+    log_info "  $new_pip_version"
 
     return 0
 }
@@ -317,38 +385,52 @@ install_python_dependencies() {
         "PyYAML==${DOCX_PYYAML_VERSION}"
     )
 
-    log_info "Installing packages:"
-    for pkg in "${packages[@]}"; do
-        log_info "  - $pkg"
-    done
-
-    local install_output
-    install_output=$("$DOCX_PIP" install "${packages[@]}" 2>&1)
-    local exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
-        log_error "Failed to install Python dependencies"
-        echo "$install_output" | tail -30 >&2
-        return 1
-    fi
-
-    # Verify installations
-    local modules_to_verify=(
+    # Check if already installed
+    local modules_to_check=(
         "markdown"
         "bs4"
         "docx"
         "yaml"
     )
 
+    local all_installed=true
+    for module in "${modules_to_check[@]}"; do
+        if ! "$DOCX_PYTHON" -c "import $module" 2>/dev/null; then
+            all_installed=false
+            break
+        fi
+    done
+
+    if [[ "$all_installed" == "true" ]]; then
+        log_success "Python dependencies already installed (idempotent)"
+        "$DOCX_PIP" list | grep -E "(markdown|beautifulsoup4|python-docx|PyYAML)" | while read -r line; do
+            log_info "  $line"
+        done
+        return 0
+    fi
+
+    log_info "Installing packages:"
+    for pkg in "${packages[@]}"; do
+        log_info "  - $pkg"
+    done
+
+    if ! "$DOCX_PIP" install "${packages[@]}" 2>&1 | tee /tmp/pip-install.log; then
+        log_error "Failed to install Python dependencies"
+        log_error "Installation output:"
+        tail -30 /tmp/pip-install.log >&2
+        return 1
+    fi
+
+    # Verify installations
     local missing=()
-    for module in "${modules_to_verify[@]}"; do
+    for module in "${modules_to_check[@]}"; do
         if ! "$DOCX_PYTHON" -c "import $module" 2>/dev/null; then
             missing+=("$module")
         fi
     done
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log_error "Failed to import modules: ${missing[*]}"
+        log_error "Failed to import modules after installation: ${missing[*]}"
         return 1
     fi
 
@@ -373,56 +455,86 @@ verify_installation() {
 
     log_step "$step" "$total" "Verifying installation"
 
+    local all_tests_passed=true
+
     # Test markdown conversion
     log_info "Testing markdown conversion..."
     local md_test
-    md_test=$("$DOCX_PYTHON" -c "import markdown; print(markdown.markdown('# Test Heading'))" 2>&1)
-
-    if ! echo "$md_test" | grep -q "<h1>Test Heading</h1>"; then
-        log_error "Markdown conversion test failed"
+    if ! md_test=$("$DOCX_PYTHON" -c "import markdown; print(markdown.markdown('# Test Heading'))" 2>&1); then
+        log_error "Markdown import failed"
         echo "$md_test" >&2
-        return 1
+        all_tests_passed=false
+    else
+        if ! echo "$md_test" | grep -q "<h1>Test Heading</h1>"; then
+            log_error "Markdown conversion test failed"
+            echo "Expected: <h1>Test Heading</h1>" >&2
+            echo "Got: $md_test" >&2
+            all_tests_passed=false
+        else
+            log_info "  [OK] Markdown conversion functional"
+        fi
     fi
-    log_info "  Markdown: OK"
 
     # Test BeautifulSoup parsing
     log_info "Testing HTML parsing..."
     local bs_test
-    bs_test=$("$DOCX_PYTHON" -c "from bs4 import BeautifulSoup; soup = BeautifulSoup('<p>test</p>', 'html.parser'); print(soup.p.text)" 2>&1)
-
-    if [[ "$bs_test" != "test" ]]; then
-        log_error "BeautifulSoup test failed"
+    if ! bs_test=$("$DOCX_PYTHON" -c "from bs4 import BeautifulSoup; soup = BeautifulSoup('<p>test</p>', 'html.parser'); print(soup.p.text)" 2>&1); then
+        log_error "BeautifulSoup import failed"
         echo "$bs_test" >&2
-        return 1
+        all_tests_passed=false
+    else
+        if [[ "$bs_test" != "test" ]]; then
+            log_error "BeautifulSoup test failed"
+            echo "Expected: test" >&2
+            echo "Got: $bs_test" >&2
+            all_tests_passed=false
+        else
+            log_info "  [OK] BeautifulSoup parsing functional"
+        fi
     fi
-    log_info "  BeautifulSoup: OK"
 
     # Test python-docx
     log_info "Testing python-docx..."
     local docx_test
-    docx_test=$("$DOCX_PYTHON" -c "from docx import Document; doc = Document(); print('OK')" 2>&1)
-
-    if [[ "$docx_test" != "OK" ]]; then
-        log_error "python-docx test failed"
+    if ! docx_test=$("$DOCX_PYTHON" -c "from docx import Document; doc = Document(); print('OK')" 2>&1); then
+        log_error "python-docx import failed"
         echo "$docx_test" >&2
-        return 1
+        all_tests_passed=false
+    else
+        if [[ "$docx_test" != "OK" ]]; then
+            log_error "python-docx test failed"
+            echo "Expected: OK" >&2
+            echo "Got: $docx_test" >&2
+            all_tests_passed=false
+        else
+            log_info "  [OK] python-docx functional"
+        fi
     fi
-    log_info "  python-docx: OK"
 
     # Test YAML
     log_info "Testing PyYAML..."
     local yaml_test
-    yaml_test=$("$DOCX_PYTHON" -c "import yaml; print(yaml.safe_load('test: value')['test'])" 2>&1)
-
-    if [[ "$yaml_test" != "value" ]]; then
-        log_error "PyYAML test failed"
+    if ! yaml_test=$("$DOCX_PYTHON" -c "import yaml; print(yaml.safe_load('test: value')['test'])" 2>&1); then
+        log_error "PyYAML import failed"
         echo "$yaml_test" >&2
+        all_tests_passed=false
+    else
+        if [[ "$yaml_test" != "value" ]]; then
+            log_error "PyYAML test failed"
+            echo "Expected: value" >&2
+            echo "Got: $yaml_test" >&2
+            all_tests_passed=false
+        else
+            log_info "  [OK] PyYAML functional"
+        fi
+    fi
+
+    if [[ "$all_tests_passed" != "true" ]]; then
+        log_error "Some verification tests failed"
         return 1
     fi
-    log_info "  PyYAML: OK"
 
     log_success "All verification tests passed"
-
     return 0
 }
 
@@ -433,22 +545,49 @@ verify_installation() {
 main() {
     log_header "DOCX Stack Installation"
 
-    if is_component_functional "docx-stack"; then
+    # Check if already functional
+    if verify_docx_stack_functional; then
         log_success "DOCX stack already functional"
         log_info "Skipping installation (idempotence)"
+
+        log_info "Current configuration:"
+        log_info "  Virtualenv: $DOCX_VENV"
+        log_info "  Python: $("$DOCX_PYTHON" --version 2>&1)"
+
         return 0
     fi
 
     log_info "DOCX stack not functional, proceeding with installation"
 
-    install_system_dependencies 1 5 || return 1
-    create_virtualenv 2 5 || return 1
-    upgrade_pip 3 5 || return 1
-    install_python_dependencies 4 5 || return 1
-    verify_installation 5 5 || return 1
+    # Execute installation steps
+    if ! install_system_dependencies 1 5; then
+        log_error "Failed at step 1: System dependencies"
+        return 1
+    fi
 
+    if ! create_virtualenv 2 5; then
+        log_error "Failed at step 2: Virtualenv creation"
+        return 1
+    fi
+
+    if ! upgrade_pip 3 5; then
+        log_error "Failed at step 3: Pip upgrade"
+        return 1
+    fi
+
+    if ! install_python_dependencies 4 5; then
+        log_error "Failed at step 4: Python dependencies"
+        return 1
+    fi
+
+    if ! verify_installation 5 5; then
+        log_error "Failed at step 5: Verification"
+        return 1
+    fi
+
+    # Final verification
     if verify_docx_stack_functional; then
-        log_success "DOCX stack installation verified"
+        log_success "DOCX stack installation completed successfully"
         mark_installation_state "docx-stack"
 
         log_info "Installation details:"
@@ -462,7 +601,7 @@ main() {
 
         return 0
     else
-        log_error "Verification failed after installation"
+        log_error "Installation completed but verification failed"
         return 1
     fi
 }

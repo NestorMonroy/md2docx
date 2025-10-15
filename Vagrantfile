@@ -6,7 +6,7 @@ Vagrant.configure("2") do |config|
   # BASE CONFIGURATION
   # =============================================================================
 
-  config.vm.box = "ubuntu/focal64"
+  config.vm.box = "ubuntu/jammy64"
   config.vm.hostname = "docx-pipeline"
 
   # =============================================================================
@@ -40,52 +40,61 @@ Vagrant.configure("2") do |config|
     mount_options: ["dmode=755", "fmode=644"]
 
   # =============================================================================
-  # PROVISIONING - SINGLE BOOTSTRAP SCRIPT
+  # PROVISIONING
   # =============================================================================
 
-  config.vm.provision "bootstrap",
-    type: "shell",
-    path: "bootstrap.sh",
-    privileged: true
+  config.vm.provision "shell", inline: <<-SHELL
+    set -euo pipefail
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    echo "=== Starting DOCX Pipeline Installation ==="
+
+    # Navigate to project directory
+    cd /vagrant
+
+    # Execute bootstrap
+    if bash bootstrap.sh; then
+      echo "[SUCCESS] Bootstrap completed"
+    else
+      echo "[ERROR] Bootstrap failed" >&2
+      exit 1
+    fi
+  SHELL
 
   # =============================================================================
-  # PROVISIONING - COMPLETION MESSAGE
+  # POST-UP MESSAGE
   # =============================================================================
 
-  config.vm.provision "completion",
-    type: "shell",
-    privileged: false,
-    inline: <<-SHELL
-      echo ""
-      echo "========================================================"
-      echo "  DOCX Pipeline Ready"
-      echo "========================================================"
-      echo ""
-      echo "The DOCX pipeline is ready to use."
-      echo ""
-      echo "Quick Start:"
-      echo "  1. SSH into VM:     vagrant ssh"
-      echo "  2. Run conversion:  md2docx"
-      echo "  3. Check output:    ls -lh builds/"
-      echo ""
-      echo "Commands:"
-      echo "  md2docx               - Convert with defaults"
-      echo "  md2docx-quick         - Quick conversion"
-      echo "  docx-config           - Show configuration"
-      echo "  docx-venv             - Activate virtualenv"
-      echo ""
-      echo "Examples:"
-      echo "  md2docx docs/entrada.md builds/output.docx"
-      echo "  generate docx docs/report.md"
-      echo ""
-      echo "Paths:"
-      echo "  Input:  /vagrant/docs/entrada.md"
-      echo "  Output: /vagrant/builds/"
-      echo ""
-      echo "========================================================"
-      echo ""
-      echo "Reload shell to activate aliases:"
-      echo "  source ~/.bashrc"
-      echo ""
-    SHELL
+  config.vm.post_up_message = <<-MSG
+
+    ============================================================
+       DOCX Pipeline Ready
+    ============================================================
+
+    Access the VM:
+      vagrant ssh
+
+    Quick Start:
+      1. Run conversion:  md2docx
+      2. Check output:    ls -lh builds/
+
+    Commands:
+      md2docx               - Convert with defaults
+      md2docx-quick         - Quick conversion
+      docx-config           - Show configuration
+      docx-venv             - Activate virtualenv
+
+    Examples:
+      md2docx docs/entrada.md builds/output.docx
+      generate docx docs/report.md
+
+    Paths:
+      Input:  /vagrant/docs/entrada.md
+      Output: /vagrant/builds/
+
+    Reload aliases:
+      source ~/.bashrc
+
+  MSG
 end

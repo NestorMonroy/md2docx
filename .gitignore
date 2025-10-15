@@ -81,6 +81,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv-docx/
 
 # Generated outputs (do not commit)
 dashboard/output/diagrams/*.png

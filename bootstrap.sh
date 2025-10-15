@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# bootstrap.sh
-# Script de inicialización y orquestación del entorno completo
 
 set -euo pipefail
 
@@ -8,8 +6,8 @@ set -euo pipefail
 # INITIALIZATION
 # =============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$SCRIPT_DIR"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT="$SCRIPT_DIR"
 
 # =============================================================================
 # COLORS (for terminal output)
@@ -75,6 +73,7 @@ validate_environment() {
 
     if [[ ! -f "$PROJECT_ROOT/config/variables.sh" ]]; then
         log_error "config/variables.sh not found"
+        log_error "Project root: $PROJECT_ROOT"
         log_error "Ensure you're running from project root"
         return 1
     fi
@@ -100,7 +99,31 @@ check_component_installed() {
 }
 
 # =============================================================================
-# STEP 1: SYSTEM DEPENDENCIES
+# RUN SCRIPT HELPER
+# =============================================================================
+
+run_script() {
+    local script_path="$1"
+    local description="$2"
+
+    if [[ ! -f "$script_path" ]]; then
+        log_error "Script not found: $script_path"
+        return 1
+    fi
+
+    log_info "Executing: $script_path"
+
+    if bash "$script_path"; then
+        log_success "$description completed"
+        return 0
+    else
+        log_error "$description failed"
+        return 1
+    fi
+}
+
+# =============================================================================
+# STEP 1: SYSTEM DEPENDENCIES (OPTIONAL)
 # =============================================================================
 
 step_install_system_dependencies() {
@@ -122,14 +145,8 @@ step_install_system_dependencies() {
         return 0
     fi
 
-    log_info "Executing: $script"
-    if bash "$script"; then
-        log_success "System dependencies installed"
-        return 0
-    else
-        log_error "Failed to install system dependencies"
-        return 1
-    fi
+    run_script "$script" "System Dependencies"
+    return $?
 }
 
 # =============================================================================
@@ -140,7 +157,7 @@ step_install_docx_stack() {
     local step="$1"
     local total="$2"
 
-    log_step "$step" "$total" "Installing DOCX Stack"
+    log_step "$step" "$total" "Installing DOCX Stack (Python + virtualenv + deps)"
 
     local script="$PROJECT_ROOT/scripts/installation/install-docx-stack.sh"
 
@@ -154,14 +171,8 @@ step_install_docx_stack() {
         return 0
     fi
 
-    log_info "Executing: $script"
-    if bash "$script"; then
-        log_success "DOCX stack installed"
-        return 0
-    else
-        log_error "Failed to install DOCX stack"
-        return 1
-    fi
+    run_script "$script" "DOCX Stack"
+    return $?
 }
 
 # =============================================================================
@@ -172,7 +183,7 @@ step_configure_docx_pipeline() {
     local step="$1"
     local total="$2"
 
-    log_step "$step" "$total" "Configuring DOCX Pipeline"
+    log_step "$step" "$total" "Configuring DOCX Pipeline (dirs + config)"
 
     local script="$PROJECT_ROOT/scripts/setup/configure-docx-pipeline.sh"
 
@@ -186,14 +197,8 @@ step_configure_docx_pipeline() {
         return 0
     fi
 
-    log_info "Executing: $script"
-    if bash "$script"; then
-        log_success "DOCX pipeline configured"
-        return 0
-    else
-        log_error "Failed to configure DOCX pipeline"
-        return 1
-    fi
+    run_script "$script" "DOCX Pipeline Configuration"
+    return $?
 }
 
 # =============================================================================
@@ -218,14 +223,8 @@ step_deploy_docx_scripts() {
         return 0
     fi
 
-    log_info "Executing: $script"
-    if bash "$script"; then
-        log_success "DOCX scripts deployed"
-        return 0
-    else
-        log_error "Failed to deploy DOCX scripts"
-        return 1
-    fi
+    run_script "$script" "DOCX Scripts Deployment"
+    return $?
 }
 
 # =============================================================================
@@ -250,14 +249,8 @@ step_deploy_docx_cli() {
         return 0
     fi
 
-    log_info "Executing: $script"
-    if bash "$script"; then
-        log_success "DOCX CLI deployed"
-        return 0
-    else
-        log_error "Failed to deploy DOCX CLI"
-        return 1
-    fi
+    run_script "$script" "DOCX CLI Deployment"
+    return $?
 }
 
 # =============================================================================
@@ -285,15 +278,15 @@ step_verify_installation() {
             log_success "Verification passed"
             return 0
         else
-            log_warning "Some verification tests failed"
-            return 0  # Don't fail bootstrap on verification warnings
+            log_warning "Some verification tests failed (non-critical)"
+            return 0
         fi
     else
         if bash "$script"; then
             log_success "Verification passed"
             return 0
         else
-            log_warning "Some verification tests failed"
+            log_warning "Some verification tests failed (non-critical)"
             return 0
         fi
     fi
@@ -306,29 +299,32 @@ step_verify_installation() {
 show_completion_message() {
     log_header "Bootstrap Completed Successfully"
 
-    echo ""
-    echo "The DOCX pipeline has been installed and configured."
-    echo ""
-    echo "Quick Start:"
-    echo "  1. Run conversion: md2docx"
-    echo "  2. Check output:   ls -lh builds/"
-    echo ""
-    echo "Commands available:"
-    echo "  md2docx           - Convert Markdown to DOCX"
-    echo "  md2docx-quick     - Quick conversion with defaults"
-    echo "  docx-config       - Show configuration"
-    echo "  docx-venv         - Activate Python virtualenv"
-    echo ""
-    echo "Examples:"
-    echo "  md2docx docs/entrada.md builds/salida.docx"
-    echo "  generate docx docs/report.md builds/report.docx"
-    echo ""
-    echo "Documentation:"
-    echo "  README: $PROJECT_ROOT/README-DOCX-PIPELINE.md"
-    echo ""
-    echo "To reload aliases in current shell:"
-    echo "  source ~/.bashrc"
-    echo ""
+    cat << 'EOF'
+
+The DOCX pipeline has been installed and configured.
+
+Quick Start:
+  1. Run conversion: md2docx
+  2. Check output:   ls -lh builds/
+
+Commands available:
+  md2docx           - Convert Markdown to DOCX
+  md2docx-quick     - Quick conversion with defaults
+  docx-config       - Show configuration
+  docx-venv         - Activate Python virtualenv
+
+Examples:
+  md2docx docs/entrada.md builds/salida.docx
+  generate docx docs/report.md builds/report.docx
+
+Paths:
+  Input:  /vagrant/docs/
+  Output: /vagrant/builds/
+
+To reload aliases in current shell:
+  source ~/.bashrc
+
+EOF
 }
 
 # =============================================================================
@@ -336,6 +332,9 @@ show_completion_message() {
 # =============================================================================
 
 main() {
+    local start_time
+    start_time=$(date +%s)
+
     log_header "DOCX Pipeline Bootstrap"
 
     echo ""
@@ -346,7 +345,7 @@ main() {
 
     # Validate environment
     if ! validate_environment; then
-        exit 1
+        return 1
     fi
 
     local total_steps=6
@@ -362,28 +361,28 @@ main() {
     ((current_step++))
     if ! step_install_docx_stack "$current_step" "$total_steps"; then
         log_error "Failed at step $current_step: DOCX stack installation"
-        exit 1
+        return 1
     fi
 
     # Step 3: Configure pipeline (required)
     ((current_step++))
     if ! step_configure_docx_pipeline "$current_step" "$total_steps"; then
         log_error "Failed at step $current_step: Pipeline configuration"
-        exit 1
+        return 1
     fi
 
     # Step 4: Deploy scripts (required)
     ((current_step++))
     if ! step_deploy_docx_scripts "$current_step" "$total_steps"; then
         log_error "Failed at step $current_step: Scripts deployment"
-        exit 1
+        return 1
     fi
 
     # Step 5: Deploy CLI (required)
     ((current_step++))
     if ! step_deploy_docx_cli "$current_step" "$total_steps"; then
         log_error "Failed at step $current_step: CLI deployment"
-        exit 1
+        return 1
     fi
 
     # Step 6: Verify (optional)
@@ -391,6 +390,13 @@ main() {
     if ! step_verify_installation "$current_step" "$total_steps"; then
         log_warning "Verification had warnings, but installation completed"
     fi
+
+    # Calculate duration
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    log_success "Bootstrap completed in ${duration} seconds"
 
     # Show completion message
     show_completion_message
@@ -402,5 +408,11 @@ main() {
 # EXECUTION
 # =============================================================================
 
-main "$@"
-exit $?
+if ! main "$@"; then
+    echo ""
+    echo "[ERROR] Bootstrap failed" >&2
+    echo "Check the output above for details" >&2
+    exit 1
+fi
+
+exit 0
