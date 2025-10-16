@@ -7,7 +7,7 @@ This module handles the complete pipeline:
 2. Convert MD to HTML using markdown library
 3. Parse HTML with BeautifulSoup
 4. Load and validate styles from YAML config
-5. Load template or generate styles programmatically
+5. Generate document with programmatic styles (no template needed)
 6. Convert HTML to DOCX using dispatcher
 7. Save and verify output
 
@@ -19,7 +19,7 @@ import sys
 import os
 import argparse
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # Check dependencies early
 try:
@@ -55,13 +55,16 @@ def parse_arguments() -> argparse.Namespace:
         Parsed arguments namespace
     """
     parser = argparse.ArgumentParser(
-        description="Convert Markdown to DOCX using corporate template",
+        description="Convert Markdown to DOCX using programmatic styles",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --input doc.md --output doc.docx --template tpl.docx --style style.yml
-  %(prog)s --input doc.md --output doc.docx --style style.yml --verbose
   %(prog)s --input doc.md --output doc.docx --style style.yml
+  %(prog)s --input doc.md --output doc.docx --style style.yml --verbose
+
+Note:
+  All styling is now generated programmatically via style.yml.
+  Template support has been removed.
         """
     )
 
@@ -82,13 +85,6 @@ Examples:
     )
 
     parser.add_argument(
-        "--template",
-        type=Path,
-        metavar="FILE",
-        help="Template DOCX file with corporate styles (optional)"
-    )
-
-    parser.add_argument(
         "--style",
         required=True,
         type=Path,
@@ -105,7 +101,7 @@ Examples:
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 1.0.0"
+        version="%(prog)s 2.0.0"
     )
 
     return parser.parse_args()
@@ -139,17 +135,6 @@ def validate_inputs(args: argparse.Namespace) -> None:
 
     if args.input.stat().st_size == 0:
         raise ValueError(f"Input file is empty: {args.input}")
-
-    # Validate template if provided
-    if args.template:
-        if not args.template.exists():
-            raise FileNotFoundError(f"Template not found: {args.template}")
-
-        if not args.template.is_file():
-            raise ValueError(f"Template path is not a file: {args.template}")
-
-        if not os.access(args.template, os.R_OK):
-            raise PermissionError(f"Template is not readable: {args.template}")
 
     # Validate style config
     if not args.style.exists():
@@ -307,37 +292,30 @@ def load_style_config(style_path: Path) -> Dict[str, Any]:
 
 
 # =============================================================================
-# TEMPLATE LOADING
+# DOCUMENT CREATION
 # =============================================================================
 
-def load_template(template_path: Optional[Path]) -> Document:
+def create_document() -> Document:
     """
-    Load DOCX template or create new document with generated styles.
-
-    Args:
-        template_path: Path to template.docx (optional)
+    Create new document with programmatic styles.
 
     Returns:
-        python-docx Document object
+        python-docx Document object with corporate styles applied
 
     Raises:
-        RuntimeError: If template loading fails
+        RuntimeError: If document creation fails
     """
     try:
-        if template_path and template_path.exists():
-            doc = Document(str(template_path))
-            if doc is None:
-                raise ValueError("Template loading produced None")
-            return doc
-        else:
-            # Create document with programmatic styles
-            doc = create_styled_document(iso_elements=False)
-            if doc is None:
-                raise ValueError("Document creation produced None")
-            return doc
+        # Create document with programmatic styles
+        doc = create_styled_document(iso_elements=False)
+
+        if doc is None:
+            raise ValueError("Document creation produced None")
+
+        return doc
 
     except Exception as e:
-        raise RuntimeError(f"Failed to load/create document: {e}")
+        raise RuntimeError(f"Failed to create document: {e}")
 
 
 # =============================================================================
@@ -395,10 +373,9 @@ def main() -> int:
         args = parse_arguments()
 
         if args.verbose:
-            print(f"Input:    {args.input}")
-            print(f"Output:   {args.output}")
-            print(f"Template: {args.template or 'None (using generated styles)'}")
-            print(f"Style:    {args.style}")
+            print(f"Input:  {args.input}")
+            print(f"Output: {args.output}")
+            print(f"Style:  {args.style}")
             print()
 
         # Validate inputs
@@ -433,10 +410,10 @@ def main() -> int:
             print("Loading style configuration...")
         style_config = load_style_config(args.style)
 
-        # Load template or create styled document
+        # Create document with programmatic styles
         if args.verbose:
-            print("Loading template...")
-        doc = load_template(args.template)
+            print("Creating document with programmatic styles...")
+        doc = create_document()
 
         # Convert HTML to DOCX
         if args.verbose:

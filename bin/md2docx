@@ -37,14 +37,13 @@ show_usage() {
     cat << EOF
 Usage: md2docx [OPTIONS] INPUT OUTPUT
 
-Convert Markdown to DOCX using corporate template and styles.
+Convert Markdown to DOCX using programmatic styles.
 
 ARGUMENTS:
   INPUT                Input Markdown file path
   OUTPUT               Output DOCX file path
 
 OPTIONS:
-  -t, --template PATH  Template DOCX file (default: from config)
   -s, --style PATH     Style configuration YAML (default: from config)
   -i, --images PATH    Images directory (default: from config)
   -v, --verbose        Enable verbose output
@@ -53,15 +52,18 @@ OPTIONS:
 EXAMPLES:
   md2docx input.md output.docx
   md2docx -v docs/report.md builds/report.docx
-  md2docx -t custom.docx -s custom.yml input.md output.docx
+  md2docx -s custom.yml input.md output.docx
 
 ENVIRONMENT:
   DOCX_VENV            Python virtualenv path
   DOCX_PYTHON          Python executable path
   DOCX_SCRIPTS_DIR     Python modules directory
-  DOCX_TPL             Default template path
   DOCX_STYLE_YML       Default style config path
   DOCX_IMG_DIR         Default images directory
+
+NOTE:
+  This version uses programmatic styling via style.yml.
+  Template support has been removed.
 
 EOF
 }
@@ -180,27 +182,6 @@ validate_output_path() {
     return 0
 }
 
-validate_template() {
-    local template_file="$1"
-
-    if [[ -z "$template_file" ]]; then
-        # No template specified, use default or skip
-        return 0
-    fi
-
-    if [[ ! -f "$template_file" ]]; then
-        echo "ERROR: Template file not found: $template_file" >&2
-        return 1
-    fi
-
-    if [[ ! -r "$template_file" ]]; then
-        echo "ERROR: Template file is not readable: $template_file" >&2
-        return 1
-    fi
-
-    return 0
-}
-
 validate_style_config() {
     local style_file="$1"
 
@@ -235,7 +216,6 @@ validate_style_config() {
 parse_arguments() {
     INPUT_FILE=""
     OUTPUT_FILE=""
-    TEMPLATE_FILE="${DOCX_TPL:-}"
     STYLE_FILE="${DOCX_STYLE_YML:-}"
     IMAGES_DIR="${DOCX_IMG_DIR:-}"
     VERBOSE=false
@@ -249,14 +229,6 @@ parse_arguments() {
             -v|--verbose)
                 VERBOSE=true
                 shift
-                ;;
-            -t|--template)
-                if [[ -z "${2:-}" ]]; then
-                    echo "ERROR: --template requires an argument" >&2
-                    exit 1
-                fi
-                TEMPLATE_FILE="$2"
-                shift 2
                 ;;
             -s|--style)
                 if [[ -z "${2:-}" ]]; then
@@ -312,11 +284,6 @@ convert_document() {
         "--output" "$OUTPUT_FILE"
         "--style" "$STYLE_FILE"
     )
-
-    # Add template if specified
-    if [[ -n "$TEMPLATE_FILE" ]]; then
-        python_args+=("--template" "$TEMPLATE_FILE")
-    fi
 
     # Add verbose flag
     if [[ "$VERBOSE" == "true" ]]; then
@@ -377,10 +344,6 @@ main() {
         exit 1
     fi
 
-    if ! validate_template "$TEMPLATE_FILE"; then
-        exit 1
-    fi
-
     if ! validate_style_config "$STYLE_FILE"; then
         exit 1
     fi
@@ -390,7 +353,6 @@ main() {
         echo "[INFO] Configuration:"
         echo "  Input:    $INPUT_FILE"
         echo "  Output:   $OUTPUT_FILE"
-        echo "  Template: ${TEMPLATE_FILE:-none}"
         echo "  Style:    $STYLE_FILE"
         echo "  Images:   ${IMAGES_DIR:-none}"
         echo ""
