@@ -13,16 +13,11 @@ import sys
 from typing import Dict, Any, Optional
 
 from bs4 import Tag
-from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
-def add_heading(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_heading(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add heading to document with proper styling.
 
@@ -30,17 +25,13 @@ def add_heading(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML heading element (h1-h6)
-
-    Raises:
-        TypeError: If arguments have wrong type
-        ValueError: If element is not a valid heading
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr instead of isinstance
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'name') or not hasattr(element, 'get_text'):
+        raise TypeError(f"element must be a valid Tag object")
 
     tag_name = element.name.lower() if element.name else None
 
@@ -79,11 +70,7 @@ def add_heading(
             run.font.bold = True
 
 
-def add_paragraph(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_paragraph(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add paragraph to document.
 
@@ -91,16 +78,13 @@ def add_paragraph(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML paragraph element
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'get_text'):
+        raise TypeError(f"element must be a valid Tag object")
 
     # Extract text
     text = element.get_text()
@@ -126,11 +110,7 @@ def add_paragraph(
         print(f"WARNING: Error adding paragraph: {e}", file=sys.stderr)
 
 
-def add_code_block(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_code_block(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add code block to document.
 
@@ -138,16 +118,13 @@ def add_code_block(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML pre element
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'find') or not hasattr(element, 'get_text'):
+        raise TypeError(f"element must be a valid Tag object")
 
     # Extract code text, preferring <code> child if present
     try:
@@ -186,11 +163,7 @@ def add_code_block(
         print(f"WARNING: Error adding code block: {e}", file=sys.stderr)
 
 
-def add_blockquote(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_blockquote(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add blockquote to document.
 
@@ -198,16 +171,13 @@ def add_blockquote(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML blockquote element
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'get_text'):
+        raise TypeError(f"element must be a valid Tag object")
 
     # Extract text
     text = element.get_text(strip=True)
@@ -244,23 +214,17 @@ def add_blockquote(
         print(f"WARNING: Error adding blockquote: {e}", file=sys.stderr)
 
 
-def add_page_break(
-    doc: Document,
-    style_config: Dict[str, Any]
-) -> None:
+def add_page_break(doc, style_config: Dict[str, Any]) -> None:
     """
     Add page break to document.
 
     Args:
         doc: python-docx Document
         style_config: Style configuration dictionary
-
-    Raises:
-        TypeError: If doc is not Document
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_page_break'):
+        raise TypeError(f"doc must be a valid Document object")
 
     # Check behavior setting
     try:
@@ -286,11 +250,7 @@ def add_page_break(
         print(f"WARNING: Error adding page break: {e}", file=sys.stderr)
 
 
-def add_text(
-    doc: Document,
-    style_config: Dict[str, Any],
-    text: str
-) -> None:
+def add_text(doc, style_config: Dict[str, Any], text: str) -> None:
     """
     Add plain text to document.
 
@@ -298,13 +258,10 @@ def add_text(
         doc: python-docx Document
         style_config: Style configuration dictionary
         text: Text content to add
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
     if not isinstance(text, str):
         raise TypeError(f"text must be str, got {type(text)}")

@@ -13,7 +13,12 @@ Mejoras v2:
 """
 
 import sys
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from docx import Document as DocumentType
+else:
+    DocumentType = None
 
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor, Inches
@@ -131,7 +136,7 @@ def add_text_field(run, field_instr_text: str) -> None:
 class StyleGenerator:
     """Generador de estilos programáticos para documentos DOCX."""
 
-    def __init__(self, doc: Document, colors: Optional[CorporateColors] = None):
+    def __init__(self, doc, colors: Optional[CorporateColors] = None):
         """
         Inicializa el generador de estilos.
 
@@ -140,10 +145,11 @@ class StyleGenerator:
             colors: Clase de colores corporativos (opcional)
 
         Raises:
-            TypeError: Si doc no es Document
+            TypeError: Si doc no es Document válido
         """
-        if not isinstance(doc, Document):
-            raise TypeError(f"doc must be Document, got {type(doc)}")
+        # Validación sin isinstance problemático
+        if not hasattr(doc, 'styles') or not hasattr(doc, 'sections'):
+            raise TypeError(f"doc must be a valid Document object, got {type(doc)}")
 
         self.doc = doc
         self.colors = colors or CorporateColors()
@@ -351,11 +357,7 @@ class StyleGenerator:
 # FUNCIÓN PRINCIPAL DE APLICACIÓN
 # =============================================================================
 
-def apply_corporate_styles(
-        doc: Document,
-        iso_elements: bool = True,
-        colors: Optional[CorporateColors] = None
-) -> Document:
+def apply_corporate_styles(doc, iso_elements: bool = True, colors: Optional[CorporateColors] = None):
     """
     Aplica estilos corporativos programáticamente a un documento.
 
@@ -368,10 +370,11 @@ def apply_corporate_styles(
         Document con estilos aplicados
 
     Raises:
-        TypeError: Si doc no es Document
+        TypeError: Si doc no es Document válido
     """
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validación sin isinstance problemático
+    if not hasattr(doc, 'styles') or not hasattr(doc, 'sections'):
+        raise TypeError(f"doc must be a valid Document object, got {type(doc)}")
 
     colors = colors or CorporateColors()
 

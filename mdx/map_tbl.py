@@ -12,17 +12,11 @@ This module handles conversion of HTML table elements to DOCX tables with:
 import sys
 from typing import Dict, Any, List
 
-from bs4 import Tag
-from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
-def add_table(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_table(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add table to document.
 
@@ -30,17 +24,13 @@ def add_table(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML table element
-
-    Raises:
-        TypeError: If arguments have wrong type
-        ValueError: If element is not a valid table
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr instead of isinstance
+    if not hasattr(doc, 'add_table'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'name') or not hasattr(element, 'find'):
+        raise TypeError(f"element must be a valid Tag object")
 
     if element.name.lower() != "table":
         raise ValueError(f"Element must be a table tag, got {element.name}")
@@ -102,7 +92,7 @@ def add_table(
                     )
 
 
-def _extract_table_data(table_element: Tag) -> List[List[Dict[str, Any]]]:
+def _extract_table_data(table_element) -> List[List[Dict[str, Any]]]:
     """
     Extract table data from HTML table element.
 
@@ -200,7 +190,7 @@ def _populate_cell(cell, cell_data: Dict[str, Any]) -> None:
 
 
 def add_simple_table(
-    doc: Document,
+    doc,
     style_config: Dict[str, Any],
     headers: List[str],
     rows: List[List[str]]
@@ -215,14 +205,10 @@ def add_simple_table(
         style_config: Style configuration dictionary
         headers: List of header strings
         rows: List of rows, where each row is a list of cell strings
-
-    Raises:
-        TypeError: If arguments have wrong type
-        ValueError: If headers is empty
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_table'):
+        raise TypeError(f"doc must be a valid Document object")
 
     if not headers:
         raise ValueError("Headers cannot be empty")

@@ -16,7 +16,6 @@ import sys
 from typing import Any, Dict, Optional
 
 from bs4 import BeautifulSoup, NavigableString, Tag
-from docx import Document
 
 try:
     from . import map_text
@@ -44,7 +43,7 @@ class Html2Docx:
     6. Handling errors gracefully
     """
 
-    def __init__(self, doc: Document, style_config: Dict[str, Any]):
+    def __init__(self, doc, style_config: Dict[str, Any]):
         """
         Initialize converter with document and style configuration.
 
@@ -126,8 +125,8 @@ class Html2Docx:
                     print(f"WARNING: Error adding text: {e}", file=sys.stderr)
             return
 
-        # Handle non-Tag elements
-        if not isinstance(element, Tag):
+        # Handle non-Tag elements using hasattr
+        if not hasattr(element, 'name') or not hasattr(element, 'children'):
             self._skipped_count += 1
             return
 
@@ -222,7 +221,7 @@ class Html2Docx:
 
 def convert_html_to_docx(
     html: str,
-    doc: Document,
+    doc,
     style_config: Dict[str, Any]
 ) -> Dict[str, int]:
     """

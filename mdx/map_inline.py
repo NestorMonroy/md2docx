@@ -14,16 +14,10 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from bs4 import Tag
-from docx import Document
 from docx.shared import Inches, Pt
 
 
-def add_image(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_image(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add image to document.
 
@@ -31,17 +25,13 @@ def add_image(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML img element
-
-    Raises:
-        TypeError: If arguments have wrong type
-        ValueError: If element is not an img tag
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr instead of isinstance
+    if not hasattr(doc, 'add_picture'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'get') or not hasattr(element, 'name'):
+        raise TypeError(f"element must be a valid Tag object")
 
     if element.name.lower() != "img":
         raise ValueError(f"Element must be an img tag, got {element.name}")
@@ -144,11 +134,7 @@ def _resolve_image_path(src: str) -> Optional[Path]:
     return None
 
 
-def add_inline(
-    doc: Document,
-    style_config: Dict[str, Any],
-    element: Tag
-) -> None:
+def add_inline(doc, style_config: Dict[str, Any], element) -> None:
     """
     Add inline formatted element to document.
 
@@ -158,16 +144,13 @@ def add_inline(
         doc: python-docx Document
         style_config: Style configuration dictionary
         element: HTML inline element
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
-    if not isinstance(element, Tag):
-        raise TypeError(f"element must be Tag, got {type(element)}")
+    if not hasattr(element, 'name') or not hasattr(element, 'get_text'):
+        raise TypeError(f"element must be a valid Tag object")
 
     tag_name = element.name.lower() if element.name else None
     text = element.get_text(strip=True)
@@ -228,7 +211,7 @@ def add_inline(
 
 
 def add_formatted_text(
-    doc: Document,
+    doc,
     style_config: Dict[str, Any],
     text: str,
     bold: bool = False,
@@ -249,13 +232,10 @@ def add_formatted_text(
         italic: Apply italic formatting
         underline: Apply underline formatting
         font_size: Font size in points
-
-    Raises:
-        TypeError: If arguments have wrong type
     """
-    # Validate inputs
-    if not isinstance(doc, Document):
-        raise TypeError(f"doc must be Document, got {type(doc)}")
+    # Validate using hasattr
+    if not hasattr(doc, 'add_paragraph'):
+        raise TypeError(f"doc must be a valid Document object")
 
     if not isinstance(text, str):
         raise TypeError(f"text must be str, got {type(text)}")

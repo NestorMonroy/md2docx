@@ -133,6 +133,7 @@ verify_python_scripts() {
         "map_list.py"
         "map_tbl.py"
         "map_inline.py"
+        "style_generator.py"
     )
 
     local missing=()
@@ -194,17 +195,8 @@ verify_configuration_files() {
         return 1
     fi
 
-    # Check template (may not exist yet)
-    if [[ -f "$DOCX_TPL" ]]; then
-        log_info "  Template: OK"
-
-        local file_size
-        file_size=$(stat -c%s "$DOCX_TPL" 2>/dev/null || echo "0")
-        log_info "    Size: $((file_size / 1024)) KB"
-    else
-        log_warning "  Template: MISSING (must be created manually)"
-        log_warning "    Location: $DOCX_TPL"
-    fi
+    # Template system has been removed
+    log_info "  Template: REMOVED (programmatic styling only)"
 
     return 0
 }
@@ -263,18 +255,12 @@ perform_conversion_test() {
         return 0
     fi
 
-    # Check if template exists
-    if [[ ! -f "$DOCX_TPL" ]]; then
-        log_warning "No template for test, skipping"
-        return 0
-    fi
-
     local test_output="$DOCX_BUILD_DIR/test_verification.docx"
 
     log_info "  Input: $DOCX_INPUT_MD"
     log_info "  Output: $test_output"
 
-    # Perform conversion
+    # Perform conversion (no template needed - programmatic styling)
     local output
     output=$("$PROJECT_ROOT/bin/md2docx" "$DOCX_INPUT_MD" "$test_output" 2>&1)
     local exit_code=$?
@@ -381,8 +367,6 @@ main() {
     ((tests_total++))
     if verify_configuration_files; then
         ((tests_passed++))
-    else
-        ((warnings++))
     fi
 
     # Test 6: CLI

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test/test-docx-pipeline-e2e.sh
+# test/test-docx-pipeline-e2e.sh
 # End-to-end test for DOCX pipeline
 
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # =============================================================================
 # LOAD ENVIRONMENT
@@ -152,15 +152,9 @@ test_help_command() {
 }
 
 test_basic_conversion() {
-    log_info "Test: Basic conversion"
+    log_info "Test: Basic conversion (programmatic styling)"
 
-    # Check prerequisites
-    if [[ ! -f "$DOCX_TPL" ]]; then
-        log_warning "  Template missing, skipping conversion test"
-        return 0
-    fi
-
-    # Perform conversion
+    # Perform conversion without template
     local output
     output=$("$PROJECT_ROOT/bin/md2docx" "$TEST_INPUT" "$TEST_OUTPUT" 2>&1)
     local exit_code=$?
@@ -266,14 +260,9 @@ test_generate_command() {
         return 0
     fi
 
-    # Check if template exists
-    if [[ ! -f "$DOCX_TPL" ]]; then
-        log_warning "  Template missing, skipping generate test"
-        return 0
-    fi
-
     local gen_output="$TEST_DIR/generate_test.docx"
 
+    # Test generate command with programmatic styling
     local output
     output=$("$PROJECT_ROOT/bin/generate" docx "$TEST_INPUT" "$gen_output" 2>&1)
     local exit_code=$?
@@ -291,6 +280,27 @@ test_generate_command() {
     fi
 }
 
+test_style_config() {
+    log_info "Test: Style configuration"
+
+    if [[ ! -f "$DOCX_STYLE_YML" ]]; then
+        log_error "  Style config missing: $DOCX_STYLE_YML"
+        return 1
+    fi
+
+    log_success "  Style config exists"
+
+    # Validate YAML syntax
+    if "$DOCX_PYTHON" -c "import yaml; yaml.safe_load(open('$DOCX_STYLE_YML'))" 2>/dev/null; then
+        log_success "  Style config is valid YAML"
+    else
+        log_error "  Style config has invalid YAML"
+        return 1
+    fi
+
+    return 0
+}
+
 # =============================================================================
 # REPORT GENERATION
 # =============================================================================
@@ -306,6 +316,9 @@ generate_test_report() {
     log_info ""
     log_info "Tests Passed: $passed / $total"
     log_info "Success Rate: $(( passed * 100 / total ))%"
+    log_info ""
+    log_info "Note: Template system has been removed"
+    log_info "      All styling is programmatic via style.yml"
     log_info ""
 
     if [[ $passed -eq $total ]]; then
@@ -339,6 +352,11 @@ main() {
 
     ((tests_total++))
     if test_help_command; then
+        ((tests_passed++))
+    fi
+
+    ((tests_total++))
+    if test_style_config; then
         ((tests_passed++))
     fi
 

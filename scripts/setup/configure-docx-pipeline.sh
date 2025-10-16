@@ -91,7 +91,6 @@ verify_docx_pipeline_configured() {
         fi
     done
 
-    # NOTE: Template is optional now with style_generator.py
     # Check style config exists
     if [[ ! -f "$DOCX_STYLE_YML" ]]; then
         log_debug "Style config missing: $DOCX_STYLE_YML"
@@ -129,7 +128,7 @@ create_directory_structure() {
         "$DOCX_IMG_DIR"
         "$DOCX_BUILD_DIR"
         "$DOCX_SCRIPTS_DIR"
-        "$(dirname "$DOCX_TPL")"
+        "${PROJECT_ROOT}/templates"
     )
 
     local created=0
@@ -207,63 +206,7 @@ configure_permissions() {
 }
 
 # =============================================================================
-# STEP 3: VALIDATE TEMPLATE
-# =============================================================================
-
-validate_template() {
-    local step="$1"
-    local total="$2"
-
-    log_step "$step" "$total" "Validating template"
-
-    if [[ ! -f "$DOCX_TPL" ]]; then
-        log_info "Template not found: $DOCX_TPL"
-        log_info "NOTE: Template is OPTIONAL with style_generator.py"
-        log_info "The system will generate styles programmatically"
-        log_info ""
-        log_info "If you want to use a custom template, create one with these styles:"
-        log_info "  - Heading 1, Heading 2, Heading 3, Heading 4"
-        log_info "  - Normal"
-        log_info "  - Code, Intense Emphasis"
-        log_info "  - List Bullet, List Number"
-        log_info "  - Table Grid, Quote"
-
-        log_info "Creating placeholder template marker..."
-        local template_dir
-        template_dir="$(dirname "$DOCX_TPL")"
-
-        if [[ ! -d "$template_dir" ]]; then
-            mkdir -p "$template_dir"
-        fi
-
-        echo "PLACEHOLDER - Template is optional, system will generate styles" > "${DOCX_TPL}.MISSING"
-
-        log_success "Template validation completed (optional)"
-        return 0
-    fi
-
-    # Check if it's a valid DOCX file (ZIP archive)
-    local file_type
-    file_type=$(file -b --mime-type "$DOCX_TPL" 2>/dev/null || echo "unknown")
-
-    if [[ "$file_type" != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ]] && \
-       [[ "$file_type" != "application/zip" ]]; then
-        log_warning "Template may not be a valid DOCX file"
-        log_warning "File type detected: $file_type"
-    else
-        log_success "Template file validated"
-        log_info "  Location: $DOCX_TPL"
-
-        local file_size
-        file_size=$(stat -c%s "$DOCX_TPL" 2>/dev/null || stat -f%z "$DOCX_TPL" 2>/dev/null || echo "0")
-        log_info "  Size: $((file_size / 1024)) KB"
-    fi
-
-    return 0
-}
-
-# =============================================================================
-# STEP 4: VALIDATE STYLE CONFIG
+# STEP 3: VALIDATE STYLE CONFIG
 # =============================================================================
 
 validate_style_config() {
@@ -326,7 +269,7 @@ EOF
 }
 
 # =============================================================================
-# STEP 5: CREATE EXAMPLE INPUT
+# STEP 4: CREATE EXAMPLE INPUT
 # =============================================================================
 
 create_example_input() {
@@ -411,7 +354,7 @@ EOF
 }
 
 # =============================================================================
-# STEP 6: VERIFY PYTHON SCRIPTS
+# STEP 5: VERIFY PYTHON SCRIPTS
 # =============================================================================
 
 verify_python_scripts() {
@@ -420,7 +363,6 @@ verify_python_scripts() {
 
     log_step "$step" "$total" "Verifying Python scripts"
 
-    # NOTE: Scripts should be in mdx/ not scripts/mdx/
     log_debug "Looking for Python scripts in: $DOCX_SCRIPTS_DIR"
 
     if [[ ! -d "$DOCX_SCRIPTS_DIR" ]]; then
@@ -503,6 +445,41 @@ verify_python_scripts() {
 }
 
 # =============================================================================
+# STEP 6: CLEANUP OLD TEMPLATE REFERENCES
+# =============================================================================
+
+cleanup_old_template() {
+    local step="$1"
+    local total="$2"
+
+    log_step "$step" "$total" "Cleaning up old template references"
+
+    local cleanup_count=0
+
+    # Remove old template placeholder if exists
+    if [[ -f "${PROJECT_ROOT}/templates/plantilla_corporativa.docx.MISSING" ]]; then
+        log_info "Removing old template placeholder..."
+        rm -f "${PROJECT_ROOT}/templates/plantilla_corporativa.docx.MISSING"
+        ((cleanup_count++))
+    fi
+
+    # Inform about actual template file if exists
+    if [[ -f "${PROJECT_ROOT}/templates/plantilla_corporativa.docx" ]]; then
+        log_info "Old template file found: plantilla_corporativa.docx"
+        log_info "Template system has been removed - this file is no longer used"
+        log_info "You may delete it manually if desired"
+    fi
+
+    if [[ $cleanup_count -gt 0 ]]; then
+        log_success "Cleaned up $cleanup_count old reference(s)"
+    else
+        log_info "No old template references found (already clean)"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # MAIN FUNCTION
 # =============================================================================
 
@@ -516,15 +493,16 @@ main() {
     fi
 
     log_info "DOCX pipeline not configured, proceeding with setup"
+    log_info "NOTE: Template system has been removed - all styling is programmatic"
 
     create_directory_structure 1 6 || return 1
     configure_permissions 2 6 || return 1
-    validate_template 3 6 || return 1
-    validate_style_config 4 6 || return 1
-    create_example_input 5 6 || return 1
-    verify_python_scripts 6 6 || return 1
+    validate_style_config 3 6 || return 1
+    create_example_input 4 6 || return 1
+    verify_python_scripts 5 6 || return 1
+    cleanup_old_template 6 6 || return 1
 
-    # Mark as configured even with warnings
+    # Mark as configured
     log_success "DOCX pipeline configuration completed"
     mark_installation_state "docx-pipeline"
 
@@ -532,13 +510,13 @@ main() {
     log_info "  Source dir: $DOCX_SRC_DIR"
     log_info "  Build dir: $DOCX_BUILD_DIR"
     log_info "  Scripts dir: $DOCX_SCRIPTS_DIR"
-    log_info "  Template: ${DOCX_TPL} (optional)"
     log_info "  Style config: $DOCX_STYLE_YML"
+    log_info "  Template: REMOVED (programmatic styling only)"
 
     log_info "Next steps:"
     log_info "  1. Python scripts deployment (automatic)"
     log_info "  2. CLI deployment (automatic)"
-    log_info "  3. Run: md2docx to generate DOCX files"
+    log_info "  3. Run: md2docx docs/entrada.md builds/output.docx"
 
     return 0
 }

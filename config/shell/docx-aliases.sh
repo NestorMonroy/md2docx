@@ -133,9 +133,9 @@ Directories:
   Build dir:     ${DOCX_BUILD_DIR:-not set}
   Scripts dir:   ${DOCX_SCRIPTS_DIR:-not set}
 
-Templates:
-  DOCX template: ${DOCX_TPL:-not set}
+Configuration:
   Style config:  ${DOCX_STYLE_YML:-not set}
+  Template:      REMOVED (programmatic styling only)
 
 Python Environment:
   Virtualenv:    ${DOCX_VENV:-not set}
@@ -152,6 +152,10 @@ Commands:
 
 Project:
   Root:          ${PROJECT_ROOT:-not set}
+
+Styling:
+  All document styling is generated programmatically via style.yml
+  Template system has been removed from the pipeline
 
 EOF
 }
@@ -231,6 +235,10 @@ Examples:
   md2docx docs/entrada.md builds/output.docx
   md2docx-quick
   docx-config
+
+Notes:
+  - Template system has been removed
+  - All styling is now programmatic via style.yml
 
 For detailed CLI help:
   md2docx --help

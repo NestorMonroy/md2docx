@@ -49,8 +49,7 @@ export DOCX_SCRIPTS_DIR="${PROJECT_ROOT}/mdx"
 # DOCX CONFIGURATION FILES
 # =============================================================================
 
-# Template removed - all styling is now programmatic via style.yml
-# export DOCX_TPL="${PROJECT_ROOT}/templates/plantilla_corporativa.docx"
+# All styling is programmatic via style.yml - template system removed
 export DOCX_STYLE_YML="${PROJECT_ROOT}/templates/style.yml"
 
 # =============================================================================
