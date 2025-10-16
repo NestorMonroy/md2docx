@@ -144,4 +144,4 @@ dashboard/output/
 *.html
 
 dashboard/models/
-
+.app/

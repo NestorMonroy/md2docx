@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# scripts/setup/deploy-docx-cli.sh
+# scripts/setup/deploy-docx-scripts.sh
 # Deploy and configure CLI for DOCX pipeline (idempotent)
+#
+# NOTE: Due to VirtualBox shared folder limitations, this script copies
+#       the CLI to a local filesystem location where permissions can be set.
 
 set -euo pipefail
 
@@ -10,6 +13,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Local CLI location (outside shared folder)
+LOCAL_CLI_DIR="/usr/local/share/docx-pipeline"
+LOCAL_CLI_PATH="$LOCAL_CLI_DIR/md2docx"
+
+# Local config location (for variables.sh)
+LOCAL_CONFIG_DIR="/usr/local/share/config"
+LOCAL_VARIABLES_PATH="$LOCAL_CONFIG_DIR/variables.sh"
 
 # =============================================================================
 # LOAD ENVIRONMENT
@@ -77,21 +88,33 @@ fi
 verify_cli_deployed() {
     log_debug "Verifying CLI deployment"
 
-    # Check CLI exists
-    if [[ ! -f "$PROJECT_ROOT/bin/md2docx" ]]; then
-        log_debug "CLI not found: $PROJECT_ROOT/bin/md2docx"
+    # Check local CLI exists
+    if [[ ! -f "$LOCAL_CLI_PATH" ]]; then
+        log_debug "Local CLI not found: $LOCAL_CLI_PATH"
         return 1
     fi
 
-    # Check CLI is executable
-    if [[ ! -x "$PROJECT_ROOT/bin/md2docx" ]]; then
-        log_debug "CLI not executable"
+    # Check local CLI is executable
+    if [[ ! -x "$LOCAL_CLI_PATH" ]]; then
+        log_debug "Local CLI not executable"
         return 1
     fi
 
-    # Check CLI can run help command (using bash explicitly)
-    if ! bash "$PROJECT_ROOT/bin/md2docx" --help >/dev/null 2>&1; then
+    # Check variables.sh exists
+    if [[ ! -f "$LOCAL_VARIABLES_PATH" ]]; then
+        log_debug "Variables file not found: $LOCAL_VARIABLES_PATH"
+        return 1
+    fi
+
+    # Check CLI can run help command
+    if ! bash "$LOCAL_CLI_PATH" --help >/dev/null 2>&1; then
         log_debug "CLI help command failed"
+        return 1
+    fi
+
+    # Check symlink exists
+    if [[ ! -L "/usr/local/bin/md2docx" ]]; then
+        log_debug "Symlink not found"
         return 1
     fi
 
@@ -138,7 +161,116 @@ verify_cli_source() {
 }
 
 # =============================================================================
-# STEP 2: MAKE CLI EXECUTABLE
+# STEP 2: COPY CLI TO LOCAL FILESYSTEM
+# =============================================================================
+
+copy_cli_to_local() {
+    local step="$1"
+    local total="$2"
+
+    log_step "$step" "$total" "Copying CLI to local filesystem"
+
+    local source_cli="$PROJECT_ROOT/bin/md2docx"
+
+    # Check if already copied and up-to-date
+    if [[ -f "$LOCAL_CLI_PATH" ]]; then
+        # Compare checksums
+        local source_sum dest_sum
+        source_sum=$(md5sum "$source_cli" 2>/dev/null | awk '{print $1}' || echo "")
+        dest_sum=$(md5sum "$LOCAL_CLI_PATH" 2>/dev/null | awk '{print $1}' || echo "")
+
+        if [[ -n "$source_sum" ]] && [[ "$source_sum" == "$dest_sum" ]]; then
+            log_info "CLI already copied and up-to-date (idempotent)"
+            return 0
+        else
+            log_info "CLI source has changed, updating local copy..."
+        fi
+    fi
+
+    log_info "Copying CLI from shared folder to local filesystem..."
+    log_info "  From: $source_cli"
+    log_info "  To:   $LOCAL_CLI_PATH"
+    log_info ""
+    log_info "NOTE: This avoids VirtualBox shared folder permission limitations"
+
+    # Create local directory if it doesn't exist
+    if [[ ! -d "$LOCAL_CLI_DIR" ]]; then
+        if ! mkdir -p "$LOCAL_CLI_DIR"; then
+            log_error "Failed to create directory: $LOCAL_CLI_DIR"
+            return 1
+        fi
+        log_debug "Created directory: $LOCAL_CLI_DIR"
+    fi
+
+    # Copy the file
+    if ! cp "$source_cli" "$LOCAL_CLI_PATH"; then
+        log_error "Failed to copy CLI to local filesystem"
+        return 1
+    fi
+
+    log_success "CLI copied to local filesystem"
+    return 0
+}
+
+# =============================================================================
+# STEP 2.5: COPY CONFIGURATION FILE (NEW!)
+# =============================================================================
+
+copy_config_file() {
+    local step="$1"
+    local total="$2"
+
+    log_step "$step" "$total" "Copying configuration file"
+
+    local source_config="$PROJECT_ROOT/config/variables.sh"
+
+    # Verify source exists
+    if [[ ! -f "$source_config" ]]; then
+        log_error "Configuration file not found: $source_config"
+        return 1
+    fi
+
+    # Check if already copied and up-to-date
+    if [[ -f "$LOCAL_VARIABLES_PATH" ]]; then
+        local source_sum dest_sum
+        source_sum=$(md5sum "$source_config" 2>/dev/null | awk '{print $1}' || echo "")
+        dest_sum=$(md5sum "$LOCAL_VARIABLES_PATH" 2>/dev/null | awk '{print $1}' || echo "")
+
+        if [[ -n "$source_sum" ]] && [[ "$source_sum" == "$dest_sum" ]]; then
+            log_info "Configuration already copied and up-to-date (idempotent)"
+            return 0
+        else
+            log_info "Configuration has changed, updating local copy..."
+        fi
+    fi
+
+    log_info "Copying configuration from shared folder to local filesystem..."
+    log_info "  From: $source_config"
+    log_info "  To:   $LOCAL_VARIABLES_PATH"
+
+    # Create config directory if it doesn't exist
+    if [[ ! -d "$LOCAL_CONFIG_DIR" ]]; then
+        if ! mkdir -p "$LOCAL_CONFIG_DIR"; then
+            log_error "Failed to create directory: $LOCAL_CONFIG_DIR"
+            return 1
+        fi
+        log_debug "Created directory: $LOCAL_CONFIG_DIR"
+    fi
+
+    # Copy the file
+    if ! cp "$source_config" "$LOCAL_VARIABLES_PATH"; then
+        log_error "Failed to copy configuration file"
+        return 1
+    fi
+
+    log_success "Configuration file copied"
+    log_info "  Location: $LOCAL_VARIABLES_PATH"
+
+    return 0
+}
+
+# =============================================================================
+# STEP 3: MAKE LOCAL CLI EXECUTABLE
 # =============================================================================
 
 make_cli_executable() {
@@ -147,83 +279,45 @@ make_cli_executable() {
 
     log_step "$step" "$total" "Making CLI executable"
 
-    local cli_file="$PROJECT_ROOT/bin/md2docx"
-
     # Check current permissions
     local perms
-    perms=$(stat -c%a "$cli_file" 2>/dev/null || stat -f%Lp "$cli_file" 2>/dev/null || echo "000")
+    perms=$(stat -c%a "$LOCAL_CLI_PATH" 2>/dev/null || stat -f%Lp "$LOCAL_CLI_PATH" 2>/dev/null || echo "000")
     log_debug "Current permissions: $perms"
 
     # If already executable, we're done
-    if [[ -x "$cli_file" ]]; then
+    if [[ -x "$LOCAL_CLI_PATH" ]]; then
         log_info "CLI already executable (idempotent)"
         log_info "  Permissions: $perms"
         return 0
     fi
 
-    log_info "Setting executable permissions..."
+    log_info "Setting executable permissions on local copy..."
 
-    # Try multiple approaches to make it executable
-    local made_executable=false
-    local attempts=0
-    local max_attempts=3
-
-    # Approach 1: Standard chmod +x
-    ((attempts++))
-    log_debug "Attempt $attempts: chmod +x"
-    if chmod +x "$cli_file" 2>/dev/null; then
-        if [[ -x "$cli_file" ]]; then
-            log_debug "chmod +x succeeded"
-            made_executable=true
-        fi
-    fi
-
-    # Approach 2: Explicit mode 755
-    if [[ "$made_executable" != "true" ]]; then
-        ((attempts++))
-        log_debug "Attempt $attempts: chmod 755"
-        if chmod 755 "$cli_file" 2>/dev/null; then
-            if [[ -x "$cli_file" ]]; then
-                log_debug "chmod 755 succeeded"
-                made_executable=true
-            fi
-        fi
-    fi
-
-    # Approach 3: Individual permission bits
-    if [[ "$made_executable" != "true" ]]; then
-        ((attempts++))
-        log_debug "Attempt $attempts: chmod u+x,g+x,o+x"
-        if chmod u+x,g+x,o+x "$cli_file" 2>/dev/null; then
-            if [[ -x "$cli_file" ]]; then
-                log_debug "chmod u+x,g+x,o+x succeeded"
-                made_executable=true
-            fi
-        fi
+    # Set permissions (this should work on local filesystem)
+    if ! chmod 755 "$LOCAL_CLI_PATH"; then
+        log_error "Failed to make CLI executable"
+        log_error "  File: $LOCAL_CLI_PATH"
+        return 1
     fi
 
     # Verify it worked
-    if [[ ! -x "$cli_file" ]]; then
-        log_error "Failed to make CLI executable after $attempts attempts"
-        log_error "File details:"
-        log_error "  Location: $cli_file"
-        log_error "  Permissions: $(ls -l "$cli_file" 2>/dev/null || echo "unknown")"
-        log_error "  Owner: $(stat -c%U:%G "$cli_file" 2>/dev/null || stat -f%Su:%Sg "$cli_file" 2>/dev/null || echo "unknown")"
-        log_info "ACCION REQUERIDA: Manually run: chmod +x $cli_file"
+    if [[ ! -x "$LOCAL_CLI_PATH" ]]; then
+        log_error "CLI still not executable after chmod"
         return 1
     fi
 
     log_success "CLI is now executable"
 
     # Show final permissions
-    perms=$(stat -c%a "$cli_file" 2>/dev/null || stat -f%Lp "$cli_file" 2>/dev/null || echo "unknown")
+    perms=$(stat -c%a "$LOCAL_CLI_PATH" 2>/dev/null || stat -f%Lp "$LOCAL_CLI_PATH" 2>/dev/null || echo "unknown")
     log_info "  Permissions: $perms"
+    log_info "  Owner: $(stat -c%U:%G "$LOCAL_CLI_PATH" 2>/dev/null || stat -f%Su:%Sg "$LOCAL_CLI_PATH" 2>/dev/null || echo "unknown")"
 
     return 0
 }
 
 # =============================================================================
-# STEP 3: VERIFY CLI SYNTAX
+# STEP 4: VERIFY CLI SYNTAX
 # =============================================================================
 
 verify_cli_syntax() {
@@ -235,7 +329,7 @@ verify_cli_syntax() {
     log_info "Checking Bash syntax..."
 
     local syntax_check
-    if syntax_check=$(bash -n "$PROJECT_ROOT/bin/md2docx" 2>&1); then
+    if syntax_check=$(bash -n "$LOCAL_CLI_PATH" 2>&1); then
         log_success "CLI syntax is valid"
         return 0
     else
@@ -246,7 +340,7 @@ verify_cli_syntax() {
 }
 
 # =============================================================================
-# STEP 4: CONFIGURE SHELL ALIASES
+# STEP 5: CONFIGURE SHELL ALIASES
 # =============================================================================
 
 configure_shell_aliases() {
@@ -305,14 +399,14 @@ configure_shell_aliases() {
 }
 
 # =============================================================================
-# STEP 5: CREATE SYMLINK
+# STEP 6: CREATE SYMLINK
 # =============================================================================
 
 create_symlink() {
     local step="$1"
     local total="$2"
 
-    log_step "$step" "$total" "Creating system-wide symlink (optional)"
+    log_step "$step" "$total" "Creating system-wide symlink"
 
     local symlink_path="/usr/local/bin/md2docx"
 
@@ -321,14 +415,11 @@ create_symlink() {
         local link_target
         link_target=$(readlink -f "$symlink_path" 2>/dev/null || readlink "$symlink_path" 2>/dev/null || echo "")
 
-        local expected_target
-        expected_target=$(readlink -f "$PROJECT_ROOT/bin/md2docx" 2>/dev/null || echo "$PROJECT_ROOT/bin/md2docx")
-
-        if [[ "$link_target" == "$expected_target" ]]; then
+        if [[ "$link_target" == "$LOCAL_CLI_PATH" ]]; then
             log_info "Symlink already exists and is correct (idempotent)"
             return 0
         else
-            log_warning "Symlink exists but points to wrong location: $link_target"
+            log_info "Symlink exists but points to wrong location: $link_target"
             log_info "Removing old symlink..."
             if ! rm -f "$symlink_path" 2>/dev/null; then
                 log_error "Failed to remove old symlink"
@@ -337,23 +428,22 @@ create_symlink() {
         fi
     fi
 
-    # Create new symlink
-    log_info "Creating symlink: $symlink_path -> $PROJECT_ROOT/bin/md2docx"
+    # Create new symlink to LOCAL copy (not shared folder)
+    log_info "Creating symlink: $symlink_path -> $LOCAL_CLI_PATH"
 
-    if ln -s "$PROJECT_ROOT/bin/md2docx" "$symlink_path" 2>/dev/null; then
-        log_success "Symlink created"
-        log_info "  md2docx is now available system-wide"
-    else
-        log_warning "Failed to create symlink (not critical)"
-        log_info "CLI can still be used via: $PROJECT_ROOT/bin/md2docx"
-        log_info "Or via: bash /vagrant/bin/md2docx"
+    if ! ln -s "$LOCAL_CLI_PATH" "$symlink_path" 2>/dev/null; then
+        log_error "Failed to create symlink"
+        return 1
     fi
+
+    log_success "Symlink created"
+    log_info "  md2docx is now available system-wide"
 
     return 0
 }
 
 # =============================================================================
-# STEP 6: TEST CLI
+# STEP 7: TEST CLI
 # =============================================================================
 
 test_cli() {
@@ -362,44 +452,19 @@ test_cli() {
 
     log_step "$step" "$total" "Testing CLI"
 
-    local cli_file="$PROJECT_ROOT/bin/md2docx"
-
-    # Pre-test: verify file is still executable
-    if [[ ! -x "$cli_file" ]]; then
-        log_warning "CLI lost executable permissions before test"
-        log_info "Attempting to restore permissions..."
-
-        chmod +x "$cli_file" 2>/dev/null || chmod 755 "$cli_file" 2>/dev/null
-
-        if [[ ! -x "$cli_file" ]]; then
-            log_error "Cannot restore executable permissions"
-            log_error "File may be on a filesystem that doesn't support execute permissions"
-            log_info "Will test using 'bash' explicitly instead"
-        fi
-    fi
-
     log_info "Testing help command..."
 
-    # Use bash explicitly to run the script (works even without +x in shared folders)
+    # Test the local copy
     local help_output
     local exit_code
 
-    help_output=$(bash "$cli_file" --help 2>&1)
+    help_output=$("$LOCAL_CLI_PATH" --help 2>&1)
     exit_code=$?
 
     if [[ $exit_code -ne 0 ]]; then
         log_error "CLI help command failed with exit code: $exit_code"
         log_error "Output:"
         echo "$help_output" | head -20 >&2
-
-        # Diagnostic information
-        log_info "Diagnostic info:"
-        log_info "  File: $cli_file"
-        log_info "  Exists: $([ -f "$cli_file" ] && echo "yes" || echo "no")"
-        log_info "  Readable: $([ -r "$cli_file" ] && echo "yes" || echo "no")"
-        log_info "  Executable: $([ -x "$cli_file" ] && echo "yes" || echo "no")"
-        log_info "  Permissions: $(ls -l "$cli_file" 2>/dev/null || echo "unknown")"
-
         return 1
     fi
 
@@ -412,7 +477,16 @@ test_cli() {
     fi
 
     log_success "CLI test passed"
-    log_info "  Tested with: bash $cli_file --help"
+
+    # Test via symlink
+    log_info "Testing via symlink..."
+    if command -v md2docx >/dev/null 2>&1; then
+        if md2docx --help >/dev/null 2>&1; then
+            log_success "Symlink works correctly"
+        else
+            log_warning "Symlink exists but command failed"
+        fi
+    fi
 
     return 0
 }
@@ -431,9 +505,10 @@ main() {
             log_info "Skipping deployment (idempotence)"
 
             log_info "CLI status:"
-            log_info "  Location: $PROJECT_ROOT/bin/md2docx"
+            log_info "  Source: $PROJECT_ROOT/bin/md2docx"
+            log_info "  Local copy: $LOCAL_CLI_PATH"
+            log_info "  Config: $LOCAL_VARIABLES_PATH"
             log_info "  Symlink: /usr/local/bin/md2docx"
-            log_info "  Aliases: loaded in .bashrc"
 
             return 0
         else
@@ -444,34 +519,44 @@ main() {
         log_info "DOCX CLI not deployed, proceeding with deployment"
     fi
 
-    # Execute deployment steps
-    if ! verify_cli_source 1 6; then
+    # Execute deployment steps (UPDATED: now 8 steps instead of 7)
+    if ! verify_cli_source 1 8; then
         log_error "Failed at step 1: Source verification"
         return 1
     fi
 
-    if ! make_cli_executable 2 6; then
-        log_error "Failed at step 2: Make executable"
+    if ! copy_cli_to_local 2 8; then
+        log_error "Failed at step 2: Copy CLI to local filesystem"
         return 1
     fi
 
-    if ! verify_cli_syntax 3 6; then
-        log_error "Failed at step 3: Syntax verification"
+    if ! copy_config_file 3 8; then
+        log_error "Failed at step 3: Copy configuration file"
         return 1
     fi
 
-    if ! configure_shell_aliases 4 6; then
-        log_error "Failed at step 4: Aliases configuration"
+    if ! make_cli_executable 4 8; then
+        log_error "Failed at step 4: Make executable"
         return 1
     fi
 
-    if ! create_symlink 5 6; then
-        log_warning "Step 5: Symlink creation had issues (non-critical)"
-        # Don't fail on symlink issues
+    if ! verify_cli_syntax 5 8; then
+        log_error "Failed at step 5: Syntax verification"
+        return 1
     fi
 
-    if ! test_cli 6 6; then
-        log_error "Failed at step 6: CLI testing"
+    if ! configure_shell_aliases 6 8; then
+        log_error "Failed at step 6: Aliases configuration"
+        return 1
+    fi
+
+    if ! create_symlink 7 8; then
+        log_error "Failed at step 7: Symlink creation"
+        return 1
+    fi
+
+    if ! test_cli 8 8; then
+        log_error "Failed at step 8: CLI testing"
         return 1
     fi
 
@@ -481,18 +566,21 @@ main() {
         mark_installation_state "docx-cli"
 
         log_info "Deployment details:"
-        log_info "  CLI: $PROJECT_ROOT/bin/md2docx"
-        log_info "  Aliases: $PROJECT_ROOT/config/shell/docx-aliases.sh"
+        log_info "  Source: $PROJECT_ROOT/bin/md2docx"
+        log_info "  Local copy: $LOCAL_CLI_PATH"
+        log_info "  Config: $LOCAL_VARIABLES_PATH"
         log_info "  Symlink: /usr/local/bin/md2docx"
+        log_info "  Aliases: $PROJECT_ROOT/config/shell/docx-aliases.sh"
 
         log_info "Available commands:"
-        log_info "  md2docx INPUT.md OUTPUT.docx"
-        log_info "  bash /vagrant/bin/md2docx --help"
+        log_info "  md2docx input.md output.docx"
+        log_info "  md2docx --help"
         log_info "  md2docx-quick (uses defaults)"
         log_info "  docx-config (show configuration)"
 
-        log_info "Note: If 'md2docx' alone doesn't work, use:"
-        log_info "  bash /vagrant/bin/md2docx"
+        log_info "Technical note:"
+        log_info "  CLI and config are copied to local filesystem to avoid"
+        log_info "  VirtualBox shared folder permission issues"
 
         return 0
     else
@@ -506,4 +594,4 @@ main() {
 # =============================================================================
 
 main "$@"
-exit $
+exit $?
